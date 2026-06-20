@@ -508,26 +508,26 @@ async function checkLocationPermission(){
 //   );
 // }
 
-// ← واستخدم ده بدله
-async function requestLocation() {
-    // اطلب الإذن عن طريق PHP endpoint
-    await fetch('/request-location');
-}
-
-async function getLocation() {
-    // اطلب الموقع
-    await fetch('/get-location');
-    
-    // الموقع هييجي عن طريق NativePHP event
-    // بتسمعه في الـ window
-    window.addEventListener('native:LocationReceived', (e) => {
-        const { latitude, longitude, success } = e.detail;
-        if (success) {
-            userLat = latitude;
-            userLng = longitude;
-            loadPrayerWidget(latitude, longitude);
-        }
-    });
+async function requestLocation(){
+  toast('📍 جاري تحديد موقعك...');
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const lat=parseFloat(pos.coords.latitude.toFixed(4));
+      const lng=parseFloat(pos.coords.longitude.toFixed(4));
+      userLat=lat;userLng=lng;
+      document.getElementById('lat-in').value=lat;
+      document.getElementById('lng-in').value=lng;
+      localStorage.setItem('leilaly_loc',JSON.stringify({lat,lng}));
+      showScreen('home');
+      loadHome(lat,lng);
+      toast('✅ تم تحديد موقعك بنجاح');
+    },
+    err=>{
+      toast('❌ تعذر تحديد الموقع، سيتم استخدام القاهرة');
+      skipLocation();
+    },
+    {enableHighAccuracy:true,timeout:10000}
+  );
 }
 
 function skipLocation(){
