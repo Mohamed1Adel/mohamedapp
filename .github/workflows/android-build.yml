@@ -80,6 +80,9 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
+      - name: Find gradlew
+        run: find . -name "gradlew" 2>/dev/null
+
       # ── 12. بناء الـ APK ───────────────────────────────
       - name: Build Android APK
         env:
@@ -92,6 +95,18 @@ jobs:
         run: |
           export NATIVEPHP_XCODE_BUILD=false
           php artisan native:package android --build-type=release --no-tty -v
+
+      - name: Show Gradle error log
+        if: always()
+        run: |
+          find . -name "*.log" -path "*gradle*" -exec echo "=== {} ===" \; -exec cat {} \;
+          echo "=== Build output dir ==="
+          find . -path "*/android/app/build/outputs*" -type f 2>/dev/null || true
+
+      - name: Run Gradle with stacktrace
+        if: always()
+        working-directory: nativephp/android  # تأكد ده هو المسار الصحيح لمشروع الـ Android
+        run: ./gradlew assembleRelease --stacktrace
 
       # ── 13. عرض ملفات APK الموجودة للتشخيص ───────────
       - name: Debug - list all files
