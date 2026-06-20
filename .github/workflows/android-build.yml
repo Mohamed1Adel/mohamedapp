@@ -1,0 +1,111 @@
+name: Build NativePHP Android APK
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+
+      # ── 1. سحب الكود ──────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. إعداد PHP ──────────────────────────────────
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: mbstring, intl, zip, bcmath
+
+      # ── 3. تثبيت مكتبات Composer ──────────────────────
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      # ── 4. إعداد Node.js ──────────────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # ── 5. تثبيت مكتبات NPM وبناء الـ Frontend ────────
+      - name: Install NPM dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build frontend assets
+        run: npm run build
+
+      # ── 6. إعداد Java 17 ──────────────────────────────
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # ── 7. إعداد Android SDK ──────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ── 8. إنشاء ملف .env وكتابة App ID فيه ──────────
+      - name: Prepare environment file
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+          php artisan key:generate --force
+          if grep -q "^NATIVEPHP_APP_ID=" .env; then
+            sed -i "s/^NATIVEPHP_APP_ID=.*/NATIVEPHP_APP_ID=com.mohamedapp.mohamedapp/" .env
+          else
+            echo "NATIVEPHP_APP_ID=com.mohamedapp.mohamedapp" >> .env
+          fi
+
+      # ── 9. إنشاء مجلد log الخاص بـ NativePHP ─────────
+      - name: Prepare NativePHP log directory
+        run: mkdir -p nativephp
+
+      # ── 10. تثبيت مشروع Android الخاص بـ NativePHP ───
+      - name: Install NativePHP Android project
+        run: php artisan native:install android --force
+
+      # ── 11. فك تشفير الـ Keystore من الـ Secret ───────
+      - name: Decode Android Keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+      # ── 12. بناء الـ APK ───────────────────────────────
+      - name: Build Android APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CI: "true"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+        run: |
+          export NATIVEPHP_XCODE_BUILD=false
+          php artisan native:package android --build-type=release --no-tty -v
+
+      # ── 13. عرض ملفات APK الموجودة للتشخيص ───────────
+      - name: Debug - list all files
+        if: always()
+        run: |
+          echo "=== Searching for APK/AAB files ==="
+          find . -iname "*.apk" -o -iname "*.aab" 2>/dev/null
+
+      # ── 14. رفع الـ APK كـ artifact ────────────────────
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: |
+            **/*.apk
+            **/build/**/*.apk
+
+      # ── 15. حذف الـ Keystore بعد الانتهاء (أمان) ──────
+      - name: Remove keystore file
+        if: always()
+        run: rm -f release.keystore
